@@ -1,90 +1,112 @@
 const express = require("express");
-const app =express();
+const app = express();
 const mongoose = require("mongoose");
-const path=require("path");
-const Listing=require("./models/listing");
-const ejsMate=require("ejs-mate");
-const methodOverride=require("method-override");
+const path = require("path");
+const ejsMate = require("ejs-mate");
+const methodOverride = require("method-override");
+const ExpressError = require("./utils/ExpressError.js");
+const session = require("express-session");
+const flash = require("connect-flash");
+const passport = require("passport");
+const LocalStrategy = require("passport-local");
+const User = require("./models/user.js");
 
-app.set("view engine","ejs");
-app.set("views",path.join(__dirname,"views"));
+const listingsRouter = require("./routes/listings.js");
+const reviewsRouter= require("./routes/review.js");
+const userRouter = require("./routes/user.js");
 
-app.use(express.urlencoded({extended:true}));
+// EJS Setup
+app.set("view engine", "ejs");
+app.set("views", path.join(__dirname, "views"));
+app.engine("ejs", ejsMate);
+
+// Middleware
+app.use(express.urlencoded({ extended: true }));
 app.use(methodOverride("_method"));
-app.engine("ejs",ejsMate);
 app.use(express.static(path.join(__dirname, "public")));
-main().then(()=>{
-    console.log("connected to DB");
-})
-.catch(err => console.log(err));
+
+const sessionOptions={
+  secret:"mysupersecretcode",
+  resave:"false",
+  saveUninitialized:true,
+  cookie:{
+    expires:Date.now()*7*24*60*60*1000,
+    maxAge:7*24*60*60*1000,
+    httpOnly:true,
+  }
+};
+
+app.use(session(sessionOptions));
+app.use(flash());
+
+
+app.use(passport.initialize());
+app.use(passport.session());
+passport.use(new LocalStrategy(User.authenticate()));
+passport.serializeUser(User.serializeUser());
+passport.deserializeUser(User.deserializeUser());
+// DB Connection
+main()
+  .then(() => console.log("Connected to DB"))
+  .catch(err => console.log(err));
 
 async function main() {
-  await mongoose.connect('mongodb://127.0.0.1:27017/wanderlust');
-
-  // use `await mongoose.connect('mongodb://user:password@127.0.0.1:27017/test');` if your database has auth enabled
+  await mongoose.connect("mongodb://127.0.0.1:27017/wanderlust");
 }
-app.get("/",(req,res)=>{
-    res.send("Hii, I am root");
-})
-// app.get("/testlisting",async(req,res)=>{
-//     let sampleListing = new Listing({
-//         title:"My new villa",
-//         description:"By the beach",
-//         price:1200,
-//         location:"Calangute,Goa",
-//         country:"India"
-//     });
-//     await sampleListing.save();
-//     console.log(sampleListing);
-//     res.send("data successfull");
+
+// Root Route
+app.get("/", (req, res) => {
+  res.send("Hi, I am root");
+});
+
+app.use((req,res,next)=>{
+  res.locals.success=req.flash("success");
+   res.locals.error=req.flash("error");
+   res.locals.currUser=req.user;
+  next();
+});
+
+// app.get("/demouser",async(req,res)=>{
+//   let fakeUser= new User({
+//     email:"student@gmail.com",
+//     username:"delta-student"
+//   });
+
+//   let registeredUser = await User.register(fakeUser,"helloworld");
+//   res.send(registeredUser);
 // })
 
-// Index Route
-app.get("/listings",async(req,res)=>{
-    let listings=  await Listing.find({});
-    res.render("./listings/index.ejs",{listings});
-})
-app.get("/listings/new",(req,res)=>{
-    res.render("./listings/new.ejs");
-})
-//show Route
-app.get("/listings/:id",async(req,res)=>{
-    let {id}=req.params;
-    let listing=await Listing.findById(id);
-    res.render("./listings/show.ejs",{listing});
 
-})
 
-// Create Route
-app.post("/listings",async(req,res)=>{
-    //let {title,description,image,price,location,country}=req.body;
-    let newListing= new Listing(req.body.listing);
-    await newListing.save();
-    res.redirect("/listings");
 
-})
 
-//edit route
-app.get("/listings/:id/edit",async(req,res)=>{
-    let {id}=req.params;
-    let listing = await Listing.findById(id);
-    res.render("./listings/edit.ejs",{listing});
-})
-//update riute
-app.put("/listings/:id",async(req,res)=>{
-    let {id}=req.params;
-    await Listing.findByIdAndUpdate(id,{...req.body.listing});
-    res.redirect(`/listings/${id}`);
-})
-// delete route
-app.delete("/listings/:id",async(req,res)=>{
-    let {id}=req.params;
-    let deletedListing=await Listing.findByIdAndDelete(id);
-    console.log(deletedListing);
-    res.redirect("/listings");
-})
 
-app.listen(3000,()=>{
-    console.log("server is listening");
+app.use("/listings",listingsRouter);
+app.use("/listings/:id/reviews",reviewsRouter);
+app.use("/", userRouter);
 
+/* -------------------------------
+   404 PAGE NOT FOUND
+-------------------------------- */
+
+app.all(/.*/, (req, res, next) => {
+  next(new ExpressError(404, "Page Not Found!"));
+});
+
+/* -------------------------------
+   GLOBAL ERROR HANDLER
+-------------------------------- */
+
+app.use((err, req, res, next) => {
+  let { statusCode = 500, message = "Something went wrong" } = err;
+  res.status(statusCode).render("./listings/error.ejs",{err});
+  //res.status(statusCode).send(message);
+});
+
+/* -------------------------------
+   START SERVER
+-------------------------------- */
+
+app.listen(3000, () => {
+  console.log("Server is listening on port 3000");
 });

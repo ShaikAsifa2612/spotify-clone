@@ -1,0 +1,17 @@
+.container{
+    height:90vh;
+    width:100vw;
+    border:2px solid black;
+    display:flex;
+    flex-direction:column;
+    justify-content:center;
+    align-items:center;
+    gap:10px;
+}
+img{
+    height: 200px;
+    width:200px;
+}
+.container h1,.container p,.container img{
+    margin:0px;
+}
